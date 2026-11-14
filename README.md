@@ -1,6 +1,22 @@
 # HGhub
 
+![Release](https://img.shields.io/github/v/release/duyue250/HGhub?sort=semver&label=%E6%9C%80%E6%96%B0%E7%89%88)
+![CI](https://github.com/duyue250/HGhub/actions/workflows/check.yml/badge.svg)
+![Platforms](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android%20%7C%20iOS-0067c0)
+
 **基于 Rust 与 Tauri 2 的跨平台桌面与移动端实践项目。**
+
+## 下载安装
+
+**[→ 前往 Releases 下载最新版](https://github.com/duyue250/HGhub/releases/latest)**——每个 Release 正文都有「下载哪个 / 怎么安装」对照表（Windows exe/zip、macOS DMG、Linux deb/AppImage、Android 三架构签名 APK、iOS IPA）。
+
+| 平台 | 文件 | 说明 |
+| --- | --- | --- |
+| Windows | `*-setup.exe` / `*-portable.zip` | 安装版 / 便携版 |
+| macOS | `*-universal.dmg` | Apple Silicon + Intel 通用 |
+| Linux | `*.deb` / `*.AppImage` | Debian 系 / 通用 |
+| Android | `*-arm64.apk` 等 | 主流手机选 arm64，已签名可直接安装 |
+| iOS | `*-ios.ipa` | TrollStore 或自签安装 |
 
 ## 维护范围与社区反馈
 
