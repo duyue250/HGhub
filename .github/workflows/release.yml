@@ -253,8 +253,31 @@ jobs:
       - name: 列出待发布文件
         run: ls -lh artifacts
 
+      - name: 生成安装说明
+        run: |
+          cat > install-guide.md <<'EOF'
+          ## 下载哪个 / 怎么安装
+
+          | 文件 | 适用平台 | 安装方式 |
+          | --- | --- | --- |
+          | `HGhub_*_x64-setup.exe` | Windows 10/11 x64 | 双击安装，装完在开始菜单启动 |
+          | `HGhub_*_x64_portable.zip` | Windows 10/11 x64 | 解压即用，适合免安装场景 |
+          | `HGhub_*_universal.dmg` | macOS（Apple Silicon + Intel 通用） | 打开 DMG 把 HGhub.app 拖进 Applications；未签名包首次打开需 `sudo xattr -rd com.apple.quarantine /Applications/HGhub.app` |
+          | `HGhub_*_arm64.apk` | Android 手机（近年主流机型） | 直接下载安装 |
+          | `HGhub_*_arm.apk` | Android 老款 32 位手机 | 直接下载安装 |
+          | `HGhub_*_x86_64.apk` | Android 平板 / 模拟器 / ChromeOS | 直接下载安装 |
+          | `HGhub_*_ios.ipa`（见 v*-ios Release） | iOS 15+ | TrollStore 直接导入，或 AltStore/SideStore/轻松签自签安装 |
+          | `*_amd64.deb` | Debian/Ubuntu 及衍生发行版 | `sudo dpkg -i *.deb` |
+          | `*_amd64.AppImage` | 其他 Linux 发行版 | `chmod +x` 后直接运行 |
+
+          手机上不确定 CPU 架构时，绝大多数现代手机选 **arm64**。
+          EOF
+          echo "--- install-guide.md ---"
+          cat install-guide.md
+
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
+          body_path: install-guide.md
           generate_release_notes: true
           fail_on_unmatched_files: true
