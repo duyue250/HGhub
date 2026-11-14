@@ -30,9 +30,9 @@ static IMG_CACHE: Lazy<Mutex<LruCache<Arc<Vec<u8>>>>> =
     Lazy::new(|| Mutex::new(LruCache::new(IMG_CACHE_MAX, 0)));
 static PL_CACHE: Lazy<Mutex<LruCache<Arc<String>>>> =
     Lazy::new(|| Mutex::new(LruCache::new(PL_CACHE_MAX, 0)));
-static KEY_CACHE: Lazy<Mutex<LruCache<(String, Arc<Vec<u8>>>>> =
+static KEY_CACHE: Lazy<Mutex<LruCache<(String, Arc<Vec<u8>>)>>> =
     Lazy::new(|| Mutex::new(LruCache::new(KEY_CACHE_MAX, 0)));
-static SEG_CACHE: Lazy<Mutex<LruCache<(String, Arc<Vec<u8>>>>> =
+static SEG_CACHE: Lazy<Mutex<LruCache<(String, Arc<Vec<u8>>)>>> =
     Lazy::new(|| Mutex::new(LruCache::new(SEG_CACHE_MAX, SEG_CACHE_TOTAL_BYTES)));
 
 const IMG_CACHE_MAX: usize = 240;
