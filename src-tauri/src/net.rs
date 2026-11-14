@@ -480,7 +480,12 @@ where
                 }
                 heal_client(&last);
                 if attempt + 1 < attempts {
-                    tokio::time::sleep(Duration::from_millis(350 * (attempt as u64 + 1))).await;
+                    // 线性退避加抖动：批量分片同时失败时避免同步重试（惊群二段）
+                    let jitter = (std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.subsec_nanos() % 200)
+                        .unwrap_or(0)) as u64;
+                    tokio::time::sleep(Duration::from_millis(350 * (attempt as u64 + 1) + jitter)).await;
                 }
             }
         }

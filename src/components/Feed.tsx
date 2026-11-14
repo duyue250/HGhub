@@ -818,10 +818,8 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
         style={{ right: isDesktop && panel ? 372 : 0, transition: "right .3s cubic-bezier(.2,0,0,1)" }}>
         {videoIds.map((vid, i) => {
           const isActive = i === index;
-          /* 只保留当前 ±1 的真实 DOM：Home 加载到几百条后，全量 section 会让
-             首帧与每次 index 变化的 reconcile 线性变慢。占位必须 h-full + snap-start，
-             否则 scrollTop 校准和 onScroll 的索引换算会错位。 */
-          if (Math.abs(i - index) > 1) {
+          /* 保留当前 ±3 的真实 DOM：上下滑预载更顺滑，长列表仍远小于全量 */
+          if (Math.abs(i - index) > 3) {
             return <div key={`${i}-${vid}`} className="w-full h-full snap-start snap-always" />;
           }
           return (

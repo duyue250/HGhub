@@ -26,35 +26,103 @@ pub const LOCAL_ORIGIN: &str = "hg://localhost";
 const IMG_KEY: &[u8] = b"f5d965df75336270";
 const IMG_IV: &[u8] = b"97b60394abc2fbe1";
 
-static IMG_CACHE: Lazy<Mutex<HashMap<String, Arc<Vec<u8>>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-static PL_CACHE: Lazy<Mutex<HashMap<String, Arc<String>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-static KEY_CACHE: Lazy<Mutex<HashMap<String, (String, Arc<Vec<u8>>)>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-static SEG_CACHE: Lazy<Mutex<HashMap<String, (String, Arc<Vec<u8>>)>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static IMG_CACHE: Lazy<Mutex<LruCache<Arc<Vec<u8>>>>> =
+    Lazy::new(|| Mutex::new(LruCache::new(IMG_CACHE_MAX, 0)));
+static PL_CACHE: Lazy<Mutex<LruCache<Arc<String>>>> =
+    Lazy::new(|| Mutex::new(LruCache::new(PL_CACHE_MAX, 0)));
+static KEY_CACHE: Lazy<Mutex<LruCache<(String, Arc<Vec<u8>>>>>> =
+    Lazy::new(|| Mutex::new(LruCache::new(KEY_CACHE_MAX, 0)));
+static SEG_CACHE: Lazy<Mutex<LruCache<(String, Arc<Vec<u8>>>>>> =
+    Lazy::new(|| Mutex::new(LruCache::new(SEG_CACHE_MAX, SEG_CACHE_TOTAL_BYTES)));
 
 const IMG_CACHE_MAX: usize = 240;
 const PL_CACHE_MAX: usize = 60;
 const KEY_CACHE_MAX: usize = 120;
 const SEG_CACHE_MAX: usize = 36;
+/// 单条分片入缓上限。
 const SEG_CACHE_MAX_BYTES: usize = 4 * 1024 * 1024;
+/// 分片缓存总字节硬预算：此前「36 条 × 4MiB」理论上限可达 144MiB，且按任意键淘汰，
+/// 回拖进度条会误删刚缓存的分片；升级为 LRU + 64MiB 预算。
+const SEG_CACHE_TOTAL_BYTES: usize = 64 * 1024 * 1024;
+
+/// 极简 LRU：HashMap + 访问序队列，get/put 摊还 O(1)。
+/// `total_budget > 0` 时同时受总字节预算约束（按 put 传入的 size 计费）。
+struct LruCache<V: Clone> {
+    max_entries: usize,
+    total_budget: usize,
+    map: HashMap<String, (V, u64, usize)>,
+    order: std::collections::VecDeque<String>,
+    tick: u64,
+    bytes_used: usize,
+}
+
+impl<V: Clone> LruCache<V> {
+    fn new(max_entries: usize, total_budget: usize) -> Self {
+        Self {
+            max_entries,
+            total_budget,
+            map: HashMap::with_capacity(max_entries),
+            order: std::collections::VecDeque::with_capacity(max_entries),
+            tick: 0,
+            bytes_used: 0,
+        }
+    }
+
+    fn touch(&mut self, key: &str) {
+        if let Some(pos) = self.order.iter().position(|k| k == key) {
+            self.order.remove(pos);
+        }
+        self.order.push_back(key.to_string());
+    }
+
+    fn get(&mut self, key: &str) -> Option<V> {
+        let hit = self.map.get(key).map(|(v, _, _)| v.clone());
+        if hit.is_some() {
+            self.touch(key);
+        }
+        hit
+    }
+
+    /// 写入并按 LRU 淘汰。`size` 为该条目的计费字节（非预算缓存传 0）。
+    fn put(&mut self, key: String, val: V, size: usize) {
+        let stamp = self.tick;
+        self.tick += 1;
+        if let Some((_, _, old_size)) = self.map.remove(&key) {
+            self.bytes_used -= old_size;
+            self.touch(&key); // 把 key 移到队尾，避免淘汰循环误删
+        }
+        if self.total_budget > 0 {
+            while self.bytes_used + size > self.total_budget {
+                let Some(victim) = self.order.pop_front() else { break };
+                if let Some((_, _, sz)) = self.map.remove(&victim) {
+                    self.bytes_used -= sz;
+                }
+            }
+        }
+        while self.map.len() >= self.max_entries {
+            let Some(victim) = self.order.pop_front() else { break };
+            if victim == key {
+                break;
+            }
+            if let Some((_, _, sz)) = self.map.remove(&victim) {
+                self.bytes_used -= sz;
+            }
+        }
+        self.bytes_used += size;
+        self.order.push_back(key.clone());
+        self.map.insert(key, (val, stamp, size));
+    }
+
+    fn clear(&mut self) {
+        self.map.clear();
+        self.order.clear();
+        self.bytes_used = 0;
+    }
+}
 
 /// 锁被 poison 时取回内部数据，避免一个线程 panic 后所有媒体请求连锁 panic。
 fn cache_guard<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|p| p.into_inner())
-}
-
-fn cache_put<V: Clone>(map: &Mutex<HashMap<String, V>>, key: String, val: V, max: usize) {
-    let mut m = cache_guard(map);
-    // 覆盖已存在的 key 不应顺手淘汰另一条缓存。
-    if !m.contains_key(&key) && m.len() >= max {
-        if let Some(k) = m.keys().next().cloned() {
-            m.remove(&k);
-        }
-    }
-    m.insert(key, val);
 }
 
 /* ───────────────────────── AES ───────────────────────── */
@@ -111,7 +179,7 @@ fn image_kind(buf: &[u8]) -> Option<&'static str> {
 
 /// 取封面：命中缓存直接返回，否则下载并按需解密；同一 URL 并发只下载一次。
 pub async fn load_image(url: &str) -> Result<(String, Arc<Vec<u8>>), String> {
-    if let Some(hit) = cache_guard(&IMG_CACHE).get(url).cloned() {
+    if let Some(hit) = cache_guard(&IMG_CACHE).get(url) {
         let kind = image_kind(&hit).unwrap_or("image/jpeg");
         return Ok((kind.to_string(), hit));
     }
@@ -120,14 +188,14 @@ pub async fn load_image(url: &str) -> Result<(String, Arc<Vec<u8>>), String> {
         let result = download_image(url).await;
         leave_in_flight(url, &notify);
         if let Ok((_, arc)) = &result {
-            cache_put(&IMG_CACHE, url.to_string(), arc.clone(), IMG_CACHE_MAX);
+            cache_guard(&IMG_CACHE).put(url.to_string(), arc.clone(), 0);
         }
         result
     } else {
         // 等待者：等领导者唤醒后重查缓存；连续两次落空说明下载失败，放弃本次
         for _ in 0..2 {
             notify.notified().await;
-            if let Some(hit) = cache_guard(&IMG_CACHE).get(url).cloned() {
+            if let Some(hit) = cache_guard(&IMG_CACHE).get(url) {
                 let kind = image_kind(&hit).unwrap_or("image/jpeg");
                 return Ok((kind.to_string(), hit));
             }
@@ -220,7 +288,7 @@ fn rewrite_uri_attr(line: &str, prefix: &str) -> String {
 /// 取 m3u8 并把 key / 子列表 / 分片地址改写到本地协议；同一 URL 并发只下载一次。
 pub async fn load_playlist(url: &str, prefix: &str) -> Result<Arc<String>, String> {
     let cache_key = format!("{prefix}|{url}");
-    if let Some(hit) = cache_guard(&PL_CACHE).get(&cache_key).cloned() {
+    if let Some(hit) = cache_guard(&PL_CACHE).get(&cache_key) {
         return Ok(hit);
     }
     let (leader, notify) = enter_in_flight(&cache_key).await;
@@ -228,13 +296,13 @@ pub async fn load_playlist(url: &str, prefix: &str) -> Result<Arc<String>, Strin
         let result = download_playlist(url, prefix).await;
         leave_in_flight(&cache_key, &notify);
         if let Ok(arc) = &result {
-            cache_put(&PL_CACHE, cache_key, arc.clone(), PL_CACHE_MAX);
+            cache_guard(&PL_CACHE).put(cache_key, arc.clone(), 0);
         }
         result
     } else {
         for _ in 0..2 {
             notify.notified().await;
-            if let Some(hit) = cache_guard(&PL_CACHE).get(&cache_key).cloned() {
+            if let Some(hit) = cache_guard(&PL_CACHE).get(&cache_key) {
                 return Ok(hit);
             }
         }
@@ -305,10 +373,10 @@ fn absolutize_uri_in_attr(base: &str, line: &str) -> String {
 
 /// 加载分片或 AES Key（带内存缓存与 single-flight，避免拖动进度条时并发重复拉取导致卡顿）。
 pub async fn load_segment(url: &str) -> Result<(Option<String>, Arc<Vec<u8>>), String> {
-    if let Some((ctype, hit)) = cache_guard(&KEY_CACHE).get(url).cloned() {
+    if let Some((ctype, hit)) = cache_guard(&KEY_CACHE).get(url) {
         return Ok((Some(ctype), hit));
     }
-    if let Some((ctype, hit)) = cache_guard(&SEG_CACHE).get(url).cloned() {
+    if let Some((ctype, hit)) = cache_guard(&SEG_CACHE).get(url) {
         return Ok((Some(ctype), hit));
     }
     let (leader, notify) = enter_in_flight(url).await;
@@ -318,19 +386,19 @@ pub async fn load_segment(url: &str) -> Result<(Option<String>, Arc<Vec<u8>>), S
         if let Ok((mime, arc)) = &result {
             let len = arc.len();
             if len <= 65536 {
-                cache_put(&KEY_CACHE, url.to_string(), (mime.clone(), arc.clone()), KEY_CACHE_MAX);
+                cache_guard(&KEY_CACHE).put(url.to_string(), (mime.clone(), arc.clone()), 0);
             } else if len <= SEG_CACHE_MAX_BYTES {
-                cache_put(&SEG_CACHE, url.to_string(), (mime.clone(), arc.clone()), SEG_CACHE_MAX);
+                cache_guard(&SEG_CACHE).put(url.to_string(), (mime.clone(), arc.clone()), arc.len());
             }
         }
         result.map(|(mime, arc)| (Some(mime), arc))
     } else {
         for _ in 0..2 {
             notify.notified().await;
-            if let Some((ctype, hit)) = cache_guard(&KEY_CACHE).get(url).cloned() {
+            if let Some((ctype, hit)) = cache_guard(&KEY_CACHE).get(url) {
                 return Ok((Some(ctype), hit));
             }
-            if let Some((ctype, hit)) = cache_guard(&SEG_CACHE).get(url).cloned() {
+            if let Some((ctype, hit)) = cache_guard(&SEG_CACHE).get(url) {
                 return Ok((Some(ctype), hit));
             }
         }
@@ -506,6 +574,46 @@ pub async fn handle(path: &str, query: &str, origin: &str) -> Response<Vec<u8>> 
         serde_json::json!({"route": route, "resource": crate::playback_log::resource_id(&target), "status": response.status().as_u16(), "bytes": response.body().len(), "elapsed_ms": started.elapsed().as_millis() as u64}),
     );
     response
+}
+
+#[cfg(test)]
+mod lru_tests {
+    use super::*;
+
+    #[test]
+    fn lru_evicts_least_recently_used() {
+        let mut c: LruCache<u32> = LruCache::new(2, 0);
+        c.put("a".into(), 1, 0);
+        c.put("b".into(), 2, 0);
+        assert_eq!(c.get("a"), Some(1)); // a 变为最近使用
+        c.put("c".into(), 3, 0); // 应淘汰 b 而不是 a
+        assert_eq!(c.get("a"), Some(1));
+        assert_eq!(c.get("b"), None);
+        assert_eq!(c.get("c"), Some(3));
+    }
+
+    #[test]
+    fn byte_budget_evicts_until_fit() {
+        let mut c: LruCache<u32> = LruCache::new(8, 100);
+        c.put("a".into(), 1, 60);
+        c.put("b".into(), 2, 30);
+        assert_eq!(c.bytes_used, 90);
+        c.put("c".into(), 3, 50); // 超 100 预算：先淘汰 a(60) 后 30+50=80 可放
+        assert_eq!(c.get("a"), None);
+        assert_eq!(c.get("b"), Some(2));
+        assert_eq!(c.get("c"), Some(3));
+        assert_eq!(c.bytes_used, 80);
+    }
+
+    #[test]
+    fn overwrite_recharges_without_extra_eviction() {
+        let mut c: LruCache<u32> = LruCache::new(2, 0);
+        c.put("a".into(), 1, 0);
+        c.put("b".into(), 2, 0);
+        c.put("a".into(), 10, 0); // 覆盖已有 key 不应淘汰
+        assert_eq!(c.get("a"), Some(10));
+        assert_eq!(c.get("b"), Some(2));
+    }
 }
 
 #[cfg(test)]

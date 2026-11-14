@@ -103,6 +103,17 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
   const fixed = state?.fixed || [];
   const busyAll = !!probing || !!switching;
 
+  /* 镜像按测速结果排序：可达的按延迟升序在前，未测/失败保持原序在后 */
+  const sortedMirrors = (() => {
+    const list = mirrors || [];
+    const ranked = list.filter((it) => {
+      const p = probes[it.url];
+      return p && p.ok && typeof p.ms === "number";
+    }).sort((a, b) => (probes[a.url].ms as number) - (probes[b.url].ms as number));
+    const rest = list.filter((it) => !ranked.includes(it));
+    return [...ranked, ...rest];
+  })();
+
   /* 全部探测完后取延迟最低的可达线路，一键切换（依赖 fixed/mirrors，必须放在其声明后） */
   const fastest = [...fixed, ...(mirrors || [])]
     .map((it) => probes[it.url])
@@ -161,7 +172,7 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
           {!loadingMirrors && !mirrorErr && mirrors?.length === 0 && (
             <div className="px-3.5 py-3 text-[11px] text-mut">地址发布页里没有可用的镜像地址</div>
           )}
-          {!loadingMirrors && (mirrors || []).map((it) => (
+          {!loadingMirrors && sortedMirrors.map((it) => (
             <Row key={it.url} item={it} current={state?.base === it.url} probe={probes[it.url]}
               busy={probing === it.url} disabled={busyAll} onPick={pick} onProbe={(u) => probe([{ url: u }], u)} />
           ))}
