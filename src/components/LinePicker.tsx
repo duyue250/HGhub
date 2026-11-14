@@ -85,18 +85,6 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
     }
   };
 
-  /* 全部探测完后取延迟最低的可达线路，一键切换 */
-  const fastest = [...fixed, ...(mirrors || [])]
-    .map((it) => probes[it.url])
-    .filter((p): p is LineProbe => !!p && p.ok && typeof p.ms === "number")
-    .sort((a, b) => a.ms - b.ms)[0];
-  const fastestUrl = fastest && fastest.url !== state?.base ? fastest.url : null;
-
-  const pickFastest = async () => {
-    if (!fastestUrl) return;
-    await pick(fastestUrl);
-  };
-
   const pick = async (url: string) => {
     if (switching || state?.base === url) return;
     setSwitching(url);
@@ -114,6 +102,18 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
 
   const fixed = state?.fixed || [];
   const busyAll = !!probing || !!switching;
+
+  /* 全部探测完后取延迟最低的可达线路，一键切换（依赖 fixed/mirrors，必须放在其声明后） */
+  const fastest = [...fixed, ...(mirrors || [])]
+    .map((it) => probes[it.url])
+    .filter((p): p is LineProbe => !!p && p.ok && typeof p.ms === "number")
+    .sort((a, b) => a.ms - b.ms)[0];
+  const fastestUrl = fastest && fastest.url !== state?.base ? fastest.url : null;
+
+  const pickFastest = async () => {
+    if (!fastestUrl) return;
+    await pick(fastestUrl);
+  };
 
   const body = (
     <div className="flex flex-col min-h-0" style={{ maxHeight: isMobile ? "74vh" : "min(72vh, 620px)" }}>
