@@ -323,7 +323,7 @@ pub async fn load_segment(url: &str) -> Result<(Option<String>, Arc<Vec<u8>>), S
                 cache_put(&SEG_CACHE, url.to_string(), (mime.clone(), arc.clone()), SEG_CACHE_MAX);
             }
         }
-        result
+        result.map(|(mime, arc)| (Some(mime), arc))
     } else {
         for _ in 0..2 {
             notify.notified().await;
@@ -338,9 +338,9 @@ pub async fn load_segment(url: &str) -> Result<(Option<String>, Arc<Vec<u8>>), S
     }
 }
 
-async fn download_segment(url: &str) -> Result<(Option<String>, Arc<Vec<u8>>), String> {
+async fn download_segment(url: &str) -> Result<(String, Arc<Vec<u8>>), String> {
     let (ctype, bytes) = fetch_bytes(url).await?;
-    let mime = ctype.clone().unwrap_or_else(|| {
+    let mime = ctype.unwrap_or_else(|| {
         let p = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
         if p.ends_with(".ts") {
             "video/mp2t".to_string()
@@ -350,7 +350,7 @@ async fn download_segment(url: &str) -> Result<(Option<String>, Arc<Vec<u8>>), S
             "application/octet-stream".to_string()
         }
     });
-    Ok((Some(mime), Arc::new(bytes)))
+    Ok((mime, Arc::new(bytes)))
 }
 
 /// 清空封面 / 播放列表 / 分片内存缓存
