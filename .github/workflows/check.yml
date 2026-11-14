@@ -1,0 +1,45 @@
+name: Check
+
+# 每次 PR / push 都跑：前端类型检查 + 版本号一致性 + 死链检查。
+# 与 release.yml 的打包流程互补，不产出构建产物。
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 版本号一致性（package.json / tauri.conf.json / Cargo.toml / Cargo.lock）
+        run: node scripts/sync-version.mjs --check
+
+      - name: 仓库身份检查（代码与配置只允许引用本仓库 duyue250/HGhub）
+        run: |
+          # 字符类写法避免本步骤的模式串自匹配；*.md 为历史审计记录，不在本检查范围。
+          if grep -RIn --exclude-dir=.git --exclude='*.md' 'Minireel[/]HGhub' .; then
+            echo "::error::发现失效的第三方仓库引用，请改为 duyue250/HGhub"
+            exit 1
+          fi
+          echo "OK：代码与配置中无失效引用"
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
