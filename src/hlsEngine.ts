@@ -1,5 +1,5 @@
 import Hls from "hls.js";
-import { isLocalMedia, mediaUrl } from "../api";
+import { isLocalMedia, mediaUrl } from "./api";
 
 /* 统一 HLS 引擎：Feed 的 VideoSurface 与图文页的 Player 原本各持一份
    近乎相同的 new Hls({...}) 与 ERROR 恢复代码，且 Player 缺退避、缺
