@@ -32,4 +32,8 @@ jobs:
           workspaces: src-tauri -> target
       - name: cargo test --lib
         working-directory: src-tauri
-        run: cargo test --locked --lib
+        run: |
+          # generate_context! 要求 frontendDist 存在；测试不加载前端，占位即可
+          mkdir -p ../dist
+          touch ../dist/index.html
+          cargo test --locked --lib
