@@ -672,7 +672,7 @@ pub async fn api_post_comments(
 }
 #[cfg(test)]
 mod tests {
-    use super::{has_play_url, is_newer, normalize_play_info};
+    use super::{has_play_url, is_newer, is_stable_tag, normalize_play_info};
     use serde_json::{json, Value};
 
     #[test]
