@@ -168,7 +168,7 @@ static CLIENT_IN_FLIGHT: Lazy<Mutex<ClientNotifyMap>> = Lazy::new(|| Mutex::new(
 async fn enter_client_flight(key: &str) -> (bool, Arc<tokio::sync::Notify>) {
     loop {
         let existing = {
-            let mut m = CLIENT_IN_FLIGHT.lock().map_err(|_| "HTTP 客户端锁失败")?;
+            let mut m = CLIENT_IN_FLIGHT.lock().unwrap_or_else(|p| p.into_inner());
             if let Some(n) = m.get(key) {
                 n.clone()
             } else {
@@ -182,12 +182,15 @@ async fn enter_client_flight(key: &str) -> (bool, Arc<tokio::sync::Notify>) {
 }
 
 fn leave_client_flight(key: &str, notify: &Arc<tokio::sync::Notify>) {
-    {
-        let mut m = CLIENT_IN_FLIGHT.lock().map_err(|_| "HTTP 客户端锁失败")?;
-        if m.get(key).is_some_and(|n| Arc::ptr_eq(n, notify)) {
-            m.remove(key);
-        }
+    let mut m = match CLIENT_IN_FLIGHT.lock() {
+        Ok(m) => m,
+        // 锁被 poison 时登记表无法可靠比对，放弃移除让等待者走缓存重查路径
+        Err(_) => return,
+    };
+    if m.get(key).is_some_and(|n| Arc::ptr_eq(n, notify)) {
+        m.remove(key);
     }
+    drop(m);
     notify.notify_waiters();
 }
 
