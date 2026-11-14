@@ -1,0 +1,30 @@
+name: Rust Tests
+
+# 纯 Rust 回归测试：不打包，只跑 cargo test --lib（约 30 项，离线，无联网依赖）。
+# 与 check.yml（前端+版本门禁）、release/build-*（打包）互补，补上测试这一环。
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: cargo test --lib
+        working-directory: src-tauri
+        run: cargo test --locked --lib
