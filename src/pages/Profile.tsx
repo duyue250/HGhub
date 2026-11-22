@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, APP_VERSION, fmt, fmtTime, isMobile, platform } from "../api";
 import type { Detail } from "../types";
 import { useStore } from "../store";
-import { Avatar, Empty, Img } from "../components/ui";
+import { Avatar, Empty, Img, Modal } from "../components/ui";
 import { IChevR, ICheck, IClock, ILogout, ISettings, IStar, IUser } from "../icons";
 
 /* 我的：结构固定（资料卡 + 我的收藏 / 观看历史）。
@@ -15,6 +15,7 @@ export default function Profile({ wide }: { wide: boolean }) {
   /* 多选批量管理：长按卡片进入，与 HGhubX #168/#205 对齐 */
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const ids = tab === "fav" ? favs : history.map((h) => h.id);
   /** 观看进度：收藏与历史共用同一份记录——收藏页也能看到「看到第几集」并续播 */
@@ -34,7 +35,7 @@ export default function Profile({ wide }: { wide: boolean }) {
   }, [ids.join(",")]);
 
   /* 切 tab / 数据变化时退出多选，避免选中项悬空 */
-  useEffect(() => { setSelecting(false); setSelected(new Set()); }, [tab, ids.join(",")]);
+  useEffect(() => { setSelecting(false); setSelected(new Set()); setConfirmRemove(false); }, [tab, ids.join(",")]);
 
   const toggleSelected = (id: number) => {
     setSelected((prev) => {
@@ -51,7 +52,6 @@ export default function Profile({ wide }: { wide: boolean }) {
     setSelecting(false);
     setSelected(new Set());
   };
-
   return (
     <div className="absolute inset-0 bg-bg flex flex-col">
       <div className="shrink-0 px-4 pb-2 flex items-center" style={{ paddingTop: "calc(var(--sat, 0px) + 14px)" }}>
@@ -141,7 +141,9 @@ export default function Profile({ wide }: { wide: boolean }) {
                     )}
                     {!!p && (
                       <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-black/65 text-[9.5px] text-white/90 leading-none">
-                        第 {p.ep} 集{p.t > 3 ? ` · ${fmtTime(p.t)}` : ""}
+                        {p.dur > 0 && p.t >= p.dur - 3
+                          ? "已看完"
+                          : <>第 {p.ep} 集{p.t > 3 ? ` · ${fmtTime(p.t)}` : ""}</>}
                       </div>
                     )}
                     {tab === "fav" && !!p && p.ep > 1 && (
@@ -169,7 +171,7 @@ export default function Profile({ wide }: { wide: boolean }) {
                     className="flex-1 h-9 rounded-(--r-ctl) bg-s3 text-[12px] text-on/85 pressable">
                     全选（{cards.length}）
                   </button>
-                  <button onClick={batchRemove} disabled={!selected.size}
+                  <button onClick={() => setConfirmRemove(true)} disabled={!selected.size}
                     className="flex-1 h-9 rounded-(--r-ctl) bg-danger text-on-danger text-[12px] font-semibold pressable disabled:opacity-50">
                     删除{selected.size ? `（${selected.size}）` : ""}
                   </button>
@@ -190,6 +192,21 @@ export default function Profile({ wide }: { wide: boolean }) {
 
         <div className="text-center text-[10px] text-dim mt-5">HGhub {APP_VERSION} · {platform === "android" ? "Android" : platform === "ios" ? "iOS" : platform === "macos" ? "macOS" : platform === "linux" ? "Linux" : "Windows"} 客户端</div>
       </div>
+
+      {/* 删除确认：destructive 操作防误触 */}
+      <Modal open={confirmRemove} onClose={() => setConfirmRemove(false)} width={330}>
+        <div className="p-5">
+          <div className="text-[14.5px] font-bold text-on">确认删除</div>
+          <p className="text-[12px] text-mut leading-relaxed mt-2">
+            将从{tab === "fav" ? "收藏" : "观看记录"}中移除选中的 {selected.size} 项。此操作只影响本机记录，不可撤销。
+          </p>
+          <div className="flex gap-2 mt-5">
+            <button onClick={() => setConfirmRemove(false)} className="flex-1 h-9 rounded-(--r-ctl) bg-s3 text-[12.5px] text-on/80 pressable">取消</button>
+            <button onClick={() => { setConfirmRemove(false); batchRemove(); }}
+              className="flex-1 h-9 rounded-(--r-ctl) bg-danger text-on-danger text-[12.5px] font-semibold pressable">删除</button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

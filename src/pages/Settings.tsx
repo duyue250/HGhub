@@ -21,7 +21,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export default function Settings({ onBack, wide }: { onBack: () => void; wide: boolean }) {
-  const { theme, setTheme, favs, history, muteOnStartup, setMuteOnStartup, startTab, setStartTab, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity, toast } = useStore();
+  const { theme, setTheme, themeMode, setThemeMode, favs, history, muteOnStartup, setMuteOnStartup, startTab, setStartTab, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity, toast } = useStore();
   const [about, setAbout] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -75,10 +75,21 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
             <div className="flex items-center gap-3 px-3.5 py-3">
               <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary">{theme === "dark" ? <IMoon size={16} /> : <ISun size={16} />}</span>
               <div className="flex-1">
-                <div className="text-[12.5px] text-on">深色外观</div>
-                <div className="text-[10.5px] text-mut">跟随设计稿的 Fluent 深色</div>
+                <div className="text-[12.5px] text-on">外观</div>
+                <div className="text-[10.5px] text-mut">深色 / 浅色，或跟随系统深浅色自动切换</div>
               </div>
-              <Toggle on={theme === "dark"} onChange={(on) => setTheme(on ? "dark" : "light")} label="深色外观" />
+              <div className="flex bg-s3 rounded-(--r-ctl) p-0.5">
+                {([["dark", "深色"], ["light", "浅色"], ["system", "跟随系统"]] as const).map(([k, l]) => (
+                  <button key={k}
+                    onClick={() => {
+                      if (k === "system") setThemeMode("system");
+                      else { setThemeMode("manual"); setTheme(k); }
+                    }}
+                    className={`h-7 px-2.5 rounded-(--r-ctl) text-[11.5px] font-semibold pressable ${
+                      (k === "system" && themeMode === "system") || (k !== "system" && themeMode === "manual" && theme === k)
+                        ? "bg-s4 text-on" : "text-mut"}`}>{l}</button>
+                ))}
+              </div>
             </div>
             <div className="flex items-center gap-3 px-3.5 py-3">
               <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><ISettings size={16} /></span>

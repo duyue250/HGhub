@@ -33,7 +33,7 @@ function Row({ item, current, probe, busy, disabled, onPick, onProbe }: {
 
 /* 线路选择：桌面居中弹窗，移动端底部抽屉 */
 export default function LinePicker({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { toast, setUser } = useStore();
+  const { toast, setUser, shareBase, setShareBase } = useStore();
   const [state, setState] = useState<LineState | null>(null);
   const [mirrors, setMirrors] = useState<LineItem[] | null>(null);
   const [mirrorErr, setMirrorErr] = useState("");
@@ -92,6 +92,7 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
       const next = await api.lineSet(url);
       if (next !== state?.base) setUser(null);
       setState((s) => (s ? { ...s, base: next } : s));
+      setShareBase(next);
       toast(`线路已切换到 ${hostOf(next)}，跨站点需重新登录`, "ok");
     } catch (e) {
       toast((e as Error).message || "切换失败", "info");

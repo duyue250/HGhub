@@ -197,9 +197,9 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   const hasVideo = kind === "video" || !!post?.video_url;
   const articleHtml = kind === "post" && !hasVideo ? (post?.content || "") : "";
 
-  /* 分享：复制播放链接 */
+  /* 分享：复制播放链接（跟随当前线路 base，切镜像后分享地址同步） */
   const shareLink = () => {
-    const u = kind === "post" ? (posts[curId]?.video_url || meta.title) : `https://huangguoai.com/video/${curId}/`;
+    const u = kind === "post" ? (posts[curId]?.video_url || meta.title) : `${store.shareBase || "https://huangguoai.com"}/video/${curId}/`;
     copyText(u).then(() => toast("链接已复制", "ok")).catch((e) => toast((e as Error).message, "info"));
   };
 

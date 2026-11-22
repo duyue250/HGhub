@@ -122,6 +122,11 @@ function loadPersist(): Persist {
 
 function readTheme(): Theme {
   try {
+    if (localStorage.getItem("hghub_theme_mode") === "system") {
+      // 跟随系统：无 matchMedia（WebView 老内核）时按深色兜底
+      const dark = window.matchMedia?.("(prefers-color-scheme: light)").matches;
+      return dark ? "light" : "dark";
+    }
     return localStorage.getItem("hghub_theme") === "light" ? "light" : "dark";
   } catch {
     return "dark";
@@ -162,6 +167,10 @@ type Store = {
   rate: number; setRatePref: (r: number) => void;
   /** 启动页偏好 */
   startTab: Tab; setStartTab: (t: Tab) => void;
+  /** 当前线路 base（分享链接用它，切线路后分享地址跟随） */
+  shareBase: string; setShareBase: (b: string) => void;
+  /** 主题模式：manual 沿用 theme 值；system 跟随系统深浅色 */
+  themeMode: "manual" | "system"; setThemeMode: (m: "manual" | "system") => void;
   searchHist: string[]; addSearch: (q: string) => void; clearSearchHist: () => void;
   strictSecurity: boolean; strictSecurityReady: boolean; securityPending: boolean; cliRelaxed: boolean; setStrictSecurity: (on: boolean) => Promise<void>;
   toasts: Toast[]; toast: (msg: string, icon?: Toast["icon"]) => void;
@@ -187,6 +196,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [strictSecurityReady, setStrictSecurityReady] = useState(false);
   const [securityPending, setSecurityPending] = useState(false);
   const toastSeq = useRef(0);
+  /* 当前线路 base：app_boot 初始化，LinePicker 切线路时更新；分享链接跟随它 */
+  const [shareBase, setShareBaseState] = useState("https://huangguoai.com");
   /* isLiked/isFav 稳定化：否则每次 value 重建都生成新函数，Feed 的 likeCount useMemo 恒失效。 */
   const likesRef = useRef(p.likes); likesRef.current = p.likes;
   const favsRef = useRef(p.favs); favsRef.current = p.favs;
@@ -198,6 +209,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try { localStorage.setItem("hghub_theme", theme); } catch { /* ignore */ }
   }, [theme]);
 
+  /* 跟随系统主题：监听系统深浅色切换，仅在 system 模式下生效 */
+  useEffect(() => {
+    if (localStorage.getItem("hghub_theme_mode") !== "system") return undefined;
+    const mq = window.matchMedia?.("(prefers-color-scheme: light)");
+    if (!mq) return undefined;
+    const onChange = () => setThemeState(readTheme());
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     try { localStorage.setItem(LS, JSON.stringify(p)); } catch { /* ignore */ }
   }, [p]);
@@ -206,6 +228,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     api.boot()
       .then((r) => {
         if (r.user && (r.user as User).id) setUser(r.user as User);
+        if (typeof r.base === "string" && r.base) setShareBase(r.base);
         if (typeof r.strict_security === "boolean") {
           setStrictSecurityState(r.strict_security);
           setHtmlStrictSecurity(r.strict_security);
@@ -352,6 +375,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!TABS.includes(t)) return;
     setP((s) => ({ ...s, startTab: t }));
   }, []);
+  const setShareBase = useCallback((b: string) => setShareBaseState(b), []);
+  const setThemeMode = useCallback((m: "manual" | "system") => {
+    try { localStorage.setItem("hghub_theme_mode", m); } catch { /* ignore */ }
+    // 切回手动时保持当前实际主题；切到系统时立即按系统值生效
+    setThemeState(readTheme());
+  }, []);
 
   const value = useMemo<Store>(() => ({
     platform: envPlatform,
@@ -364,6 +393,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     muted: p.muted, setMuted, volume: p.volume, setVolume,
     rate: p.rate, setRatePref,
     startTab: p.startTab, setStartTab,
+    shareBase, setShareBase,
+    themeMode: (() => {
+      try { return localStorage.getItem("hghub_theme_mode") === "system" ? "system" as const : "manual" as const; } catch { return "manual" as const; }
+    })(), setThemeMode,
     theater, setTheater, fs, setFs, clean, setClean,
     muteOnStartup: p.muteOnStartup, setMuteOnStartup,
     searchHist: p.searchHist, addSearch, clearSearchHist,
@@ -372,7 +405,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }), [theme, tab, setTab, stack, push, pop, user, loginOpen, logout,
     p.likes, p.favs, p.history, p.follows, p.muted, p.muteOnStartup, p.volume, p.rate, p.startTab, p.searchHist,
     isLiked, isFav, toggleLikeLocal, toggleFavLocal, toggleFollowLocal, addHistory, clearHistory, removeFavs, removeHistory,
-    setMuted, setMuteOnStartup, setVolume, setRatePref, setStartTab, addSearch, clearSearchHist, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity,
+    setMuted, setMuteOnStartup, setVolume, setRatePref, setStartTab, setThemeMode, setShareBase, addSearch, clearSearchHist, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity,
     toasts, toast, theater, setTheater, fs, setFs, clean, setClean]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
