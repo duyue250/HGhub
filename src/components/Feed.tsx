@@ -384,6 +384,25 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curId, curEp, playTry]);
 
+  /* 预取下一集播放地址：切集零等待（HGhubX「连续切集」同款思路）。
+     只在剧集详情已就绪且下一集地址尚未缓存时预取一次；失败静默，
+     切过去时主 effect 会自然重试。 */
+  const nextEp = episodes.find((e) => e.ep_num === curEp + 1)?.ep_num;
+  useEffect(() => {
+    if (!curId || !nextEp) return;
+    const key = `${curId}:${nextEp}`;
+    if (playUrls[key]) return;
+    let alive = true;
+    api.play(curId, nextEp)
+      .then((info) => {
+        if (!alive || !info?.video_url) return;
+        setPlayUrls((m) => ({ ...m, [key]: info.video_url }));
+      })
+      .catch(() => { /* 预取失败不打扰，切集时主 effect 重试 */ });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curId, nextEp]);
+
   /* 切换条目/集数时重置播放与缩放状态 */
   useEffect(() => {
     setTime(0); setDuration(0); setBuffered(0); setErr(""); setWaiting(true); setPaused(false); setDescOpen(false);

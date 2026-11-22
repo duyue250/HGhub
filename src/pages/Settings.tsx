@@ -21,7 +21,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export default function Settings({ onBack, wide }: { onBack: () => void; wide: boolean }) {
-  const { theme, setTheme, favs, history, muteOnStartup, setMuteOnStartup, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity, toast } = useStore();
+  const { theme, setTheme, favs, history, muteOnStartup, setMuteOnStartup, startTab, setStartTab, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity, toast } = useStore();
   const [about, setAbout] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -79,6 +79,19 @@ export default function Settings({ onBack, wide }: { onBack: () => void; wide: b
                 <div className="text-[10.5px] text-mut">跟随设计稿的 Fluent 深色</div>
               </div>
               <Toggle on={theme === "dark"} onChange={(on) => setTheme(on ? "dark" : "light")} label="深色外观" />
+            </div>
+            <div className="flex items-center gap-3 px-3.5 py-3">
+              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><ISettings size={16} /></span>
+              <div className="flex-1">
+                <div className="text-[12.5px] text-on">启动页</div>
+                <div className="text-[10.5px] text-mut">应用冷启动后默认进入的页面，下次启动生效</div>
+              </div>
+              <div className="flex bg-s3 rounded-(--r-ctl) p-0.5">
+                {([["home", "首页"], ["search", "搜索"], ["category", "分类"], ["profile", "我的"]] as const).map(([k, l]) => (
+                  <button key={k} onClick={() => setStartTab(k)}
+                    className={`h-7 px-2.5 rounded-(--r-ctl) text-[11.5px] font-semibold pressable ${startTab === k ? "bg-s4 text-on" : "text-mut"}`}>{l}</button>
+                ))}
+              </div>
             </div>
           </Section>
 

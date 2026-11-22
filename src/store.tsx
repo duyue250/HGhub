@@ -53,14 +53,18 @@ type Persist = {
   volume: number;
   /** 上次使用的基准倍速：跨会话记住用户习惯（长按 2x 与锁速不落盘） */
   rate: number;
+  /** 启动页偏好：应用冷启动默认落在哪个 tab（HGhubX #180 同款） */
+  startTab: Tab;
   searchHist: string[];
 };
 
 const LS = "hghub_app_v1";
 const DEFAULTS: Persist = {
   likes: [], favs: [], history: [], follows: [],
-  muted: true, muteOnStartup: true, volume: 0.7, rate: 1, searchHist: [],
+  muted: true, muteOnStartup: true, volume: 0.7, rate: 1, startTab: "home", searchHist: [],
 };
+
+const TABS: Tab[] = ["home", "search", "category", "profile"];
 
 /** 旧版本 history 是 number[]，读出来时升级成带进度的结构 */
 function normalizeHistory(raw: unknown): WatchProgress[] {
@@ -99,6 +103,7 @@ function normalizePersist(raw: unknown): Persist {
       ? Math.max(0, Math.min(1, o.volume)) : DEFAULTS.volume,
     rate: typeof o.rate === "number" && Number.isFinite(o.rate)
       ? Math.max(0.5, Math.min(4, o.rate)) : DEFAULTS.rate,
+    startTab: TABS.includes(o.startTab as Tab) ? (o.startTab as Tab) : DEFAULTS.startTab,
   };
 }
 
@@ -155,6 +160,8 @@ type Store = {
   volume: number; setVolume: (v: number) => void;
   /** 基准倍速（跨会话记忆；长按 2x / 锁速是临时态，不入库） */
   rate: number; setRatePref: (r: number) => void;
+  /** 启动页偏好 */
+  startTab: Tab; setStartTab: (t: Tab) => void;
   searchHist: string[]; addSearch: (q: string) => void; clearSearchHist: () => void;
   strictSecurity: boolean; strictSecurityReady: boolean; securityPending: boolean; cliRelaxed: boolean; setStrictSecurity: (on: boolean) => Promise<void>;
   toasts: Toast[]; toast: (msg: string, icon?: Toast["icon"]) => void;
@@ -167,7 +174,7 @@ let seq = 0;
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [p, setP] = useState<Persist>(loadPersist);
   const [theme, setThemeState] = useState<Theme>(readTheme);
-  const [tab, setTabRaw] = useState<Tab>("home");
+  const [tab, setTabRaw] = useState<Tab>(() => loadPersist().startTab);
   const [stack, setStack] = useState<Page[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -341,6 +348,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!Number.isFinite(r)) return;
     setP((s) => ({ ...s, rate: Math.max(0.5, Math.min(4, r)) }));
   }, []);
+  const setStartTab = useCallback((t: Tab) => {
+    if (!TABS.includes(t)) return;
+    setP((s) => ({ ...s, startTab: t }));
+  }, []);
 
   const value = useMemo<Store>(() => ({
     platform: envPlatform,
@@ -352,15 +363,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     toggleLikeLocal, toggleFavLocal, toggleFollowLocal, addHistory, clearHistory, removeFavs, removeHistory,
     muted: p.muted, setMuted, volume: p.volume, setVolume,
     rate: p.rate, setRatePref,
+    startTab: p.startTab, setStartTab,
     theater, setTheater, fs, setFs, clean, setClean,
     muteOnStartup: p.muteOnStartup, setMuteOnStartup,
     searchHist: p.searchHist, addSearch, clearSearchHist,
     strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity,
     toasts, toast,
   }), [theme, tab, setTab, stack, push, pop, user, loginOpen, logout,
-    p.likes, p.favs, p.history, p.follows, p.muted, p.muteOnStartup, p.volume, p.rate, p.searchHist,
+    p.likes, p.favs, p.history, p.follows, p.muted, p.muteOnStartup, p.volume, p.rate, p.startTab, p.searchHist,
     isLiked, isFav, toggleLikeLocal, toggleFavLocal, toggleFollowLocal, addHistory, clearHistory, removeFavs, removeHistory,
-    setMuted, setMuteOnStartup, setVolume, setRatePref, addSearch, clearSearchHist, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity,
+    setMuted, setMuteOnStartup, setVolume, setRatePref, setStartTab, addSearch, clearSearchHist, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity,
     toasts, toast, theater, setTheater, fs, setFs, clean, setClean]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
