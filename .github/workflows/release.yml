@@ -262,8 +262,8 @@ jobs:
           {
             echo "## 本版改动"
             echo ""
-            FEAT="$(git log "$RANGE" --pretty=format:'- %s' --grep='^feat' | sed 's/^feat[:：]\s*//')"
-            FIX="$(git log "$RANGE" --pretty=format:'- %s' --grep='^fix' | sed 's/^fix[:：]\s*//')"
+            FEAT="$(git log "$RANGE" --pretty=format:'- %s' --grep='^feat' | sed -E 's/^- feat[::][[:space:]]*/- /')"
+            FIX="$(git log "$RANGE" --pretty=format:'- %s' --grep='^fix' | sed -E 's/^- fix[::][[:space:]]*/- /')"
             OTHER="$(git log "$RANGE" --pretty=format:'- %s' | grep -v -E '^- (feat|fix|chore: bump version)')"
             if [ -n "$FEAT" ]; then
               echo "### 新增与优化"
