@@ -253,6 +253,40 @@ jobs:
       - name: 列出待发布文件
         run: ls -lh artifacts
 
+      - name: 生成版本改动说明（自上个 tag 以来的 feat/fix）
+        run: |
+          PREV_TAG="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          echo "prev tag: ${PREV_TAG:-<none>}"
+          RANGE="${PREV_TAG:+${PREV_TAG}..${GITHUB_REF_NAME}}"
+          [ -n "$RANGE" ] || RANGE="${GITHUB_REF_NAME}"
+          {
+            echo "## 本版改动"
+            echo ""
+            FEAT="$(git log "$RANGE" --pretty=format:'- %s' --grep='^feat' | sed 's/^feat[:：]\s*//')"
+            FIX="$(git log "$RANGE" --pretty=format:'- %s' --grep='^fix' | sed 's/^fix[:：]\s*//')"
+            OTHER="$(git log "$RANGE" --pretty=format:'- %s' | grep -v -E '^- (feat|fix|chore: bump version)')"
+            if [ -n "$FEAT" ]; then
+              echo "### 新增与优化"
+              echo "$FEAT"
+              echo ""
+            fi
+            if [ -n "$FIX" ]; then
+              echo "### 修复"
+              echo "$FIX"
+              echo ""
+            fi
+            if [ -n "$OTHER" ]; then
+              echo "### 其他"
+              echo "$OTHER"
+              echo ""
+            fi
+            if [ -z "$FEAT" ] && [ -z "$FIX" ] && [ -z "$OTHER" ]; then
+              echo "- 例行维护与依赖更新"
+            fi
+          } > changelog.md
+          echo "--- changelog.md ---"
+          cat changelog.md
+
       - name: 生成安装说明
         run: |
           cat > install-guide.md <<'EOF'
@@ -275,9 +309,12 @@ jobs:
           echo "--- install-guide.md ---"
           cat install-guide.md
 
+      - name: 合并 Release 正文
+        run: cat changelog.md install-guide.md > release-body.md
+
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
-          body_path: install-guide.md
+          body_path: release-body.md
           generate_release_notes: true
           fail_on_unmatched_files: true
