@@ -19,12 +19,29 @@ export default function Search({ active, wide }: { active: boolean; wide: boolea
   const [err, setErr] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const busy = useRef(false);
+  const sentinel = useRef<HTMLDivElement>(null);
   /* 连续点热门词时后发先至不能被旧请求覆盖 */
   const seqRef = useRef(0);
+  /* 自动加载用的最新值镜像：observer 回调里拿 state 会闭包过期 */
+  const submittedRef = useRef("");
+  const pageRef = useRef(0);
+  const queryingRef = useRef(false);
 
   useEffect(() => {
     if (active && !/Android/i.test(navigator.userAgent)) inputRef.current?.focus();
   }, [active]);
+
+  /* 上滑自动加载：接近底部时续载下一页（与分类/吃瓜页统一，HGhubX #202） */
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || !queryingRef.current) return;
+    const io = new IntersectionObserver((es) => {
+      if (es[0].isIntersecting && submittedRef.current && !busy.current) run(submittedRef.current, pageRef.current + 1);
+    }, { rootMargin: "600px" });
+    io.observe(el);
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
 
   const run = async (keyword: string, p: number) => {
     // 分页防重复触发；新词搜索（p=1）总是放行，由 seqRef 让旧请求的响应失效。
@@ -43,6 +60,7 @@ export default function Search({ active, wide }: { active: boolean; wide: boolea
       });
       setPage(p);
       setPages(res?.pagination?.pages || 1);
+      pageRef.current = p;
       setErr(null);
     } catch (e) {
       if (my === seqRef.current) setErr((e as Error).message || "搜索失败");
@@ -61,10 +79,13 @@ export default function Search({ active, wide }: { active: boolean; wide: boolea
     addSearch(k);
     setItems([]);
     setPages(1);
+    pageRef.current = 0;
     run(k, 1);
   };
 
   const querying = submitted.length > 0;
+  queryingRef.current = querying;
+  submittedRef.current = submitted;
 
   return (
     <div className="absolute inset-0 bg-bg flex flex-col">
@@ -130,10 +151,10 @@ export default function Search({ active, wide }: { active: boolean; wide: boolea
                 <Masonry videos={items} wide={wide} onOpen={(v) => push({ kind: "feed", videoIds: items.map((x) => x.id), index: items.findIndex((x) => x.id === v.id), title: `搜索 · ${submitted}` })} />
                 <div className="flex justify-center py-4">
                   {loading ? <div className="w-6 h-6 spinner" />
-                    : page < pages ? (
-                      <button onClick={() => run(submitted, page + 1)} className="px-5 h-9 rounded-(--r-ctl) bg-s3 text-[12px] text-on/85 pressable">加载更多</button>
-                    ) : <span className="text-[10.5px] text-dim">— 已经到底啦 —</span>}
+                    : page < pages ? <span className="text-[10.5px] text-dim">上滑自动加载…</span>
+                    : <span className="text-[10.5px] text-dim">— 已经到底啦 —</span>}
                 </div>
+                {page < pages && <div ref={sentinel} className="h-10" />}
               </>
             ) : loading ? (
               <div className="flex justify-center py-12"><div className="w-8 h-8 spinner" /></div>

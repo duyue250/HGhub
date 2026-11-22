@@ -3,25 +3,28 @@ import { api, APP_VERSION, fmt, fmtTime, isMobile, platform } from "../api";
 import type { Detail } from "../types";
 import { useStore } from "../store";
 import { Avatar, Empty, Img } from "../components/ui";
-import { IChevR, IClock, ILogout, ISettings, IStar, IUser } from "../icons";
+import { IChevR, ICheck, IClock, ILogout, ISettings, IStar, IUser } from "../icons";
 
 /* 我的：结构固定（资料卡 + 我的收藏 / 观看历史）。
    收藏与观看记录都存在本地，所以未登录也照常展示；未登录时资料卡本身就是登录入口。 */
 export default function Profile({ wide }: { wide: boolean }) {
-  const { user, setLoginOpen, logout, history, favs, clearHistory, push } = useStore();
+  const { user, setLoginOpen, logout, history, favs, removeFavs, removeHistory, toast, push } = useStore();
   const [tab, setTab] = useState<"fav" | "history">("fav");
   const [cards, setCards] = useState<Detail[]>([]);
   const [loading, setLoading] = useState(false);
+  /* 多选批量管理：长按卡片进入，与 HGhubX #168/#205 对齐 */
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const ids = tab === "fav" ? favs : history.map((h) => h.id);
-  /** 观看记录里这条的进度（收藏页没有） */
-  const progressOf = (id: number) => (tab === "history" ? history.find((h) => h.id === id) : undefined);
+  /** 观看进度：收藏与历史共用同一份记录——收藏页也能看到「看到第几集」并续播 */
+  const progressOf = (id: number) => history.find((h) => h.id === id);
 
   useEffect(() => {
     let alive = true;
     if (!ids.length) { setCards([]); return; }
     setLoading(true);
-    Promise.allSettled(ids.slice(0, 12).map((id) => api.video(id)))
+    Promise.allSettled(ids.slice(0, 24).map((id) => api.video(id)))
       .then((rs) => {
         if (!alive) return;
         setCards(rs.filter((r) => r.status === "fulfilled").map((r) => (r as PromiseFulfilledResult<Detail>).value));
@@ -29,6 +32,25 @@ export default function Profile({ wide }: { wide: boolean }) {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [ids.join(",")]);
+
+  /* 切 tab / 数据变化时退出多选，避免选中项悬空 */
+  useEffect(() => { setSelecting(false); setSelected(new Set()); }, [tab, ids.join(",")]);
+
+  const toggleSelected = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const batchRemove = () => {
+    const idsToRemove = [...selected];
+    if (!idsToRemove.length) return;
+    if (tab === "fav") removeFavs(idsToRemove); else removeHistory(idsToRemove);
+    toast(`已删除 ${idsToRemove.length} 项`, "ok");
+    setSelecting(false);
+    setSelected(new Set());
+  };
 
   return (
     <div className="absolute inset-0 bg-bg flex flex-col">
@@ -92,37 +114,77 @@ export default function Profile({ wide }: { wide: boolean }) {
           {loading ? (
             <div className="flex justify-center py-8"><div className="w-7 h-7 spinner" /></div>
           ) : cards.length ? (
-            <div className="grid grid-cols-3 gap-2">
-              {cards.map((c) => {
-                const p = progressOf(c.id);
-                return (
-                <button key={c.id} onClick={() => push({
-                  kind: "feed", videoIds: cards.map((x) => x.id), index: cards.findIndex((x) => x.id === c.id),
-                  title: tab === "fav" ? "我的收藏" : "观看历史",
-                  startEp: p?.ep, startTime: p?.t,
-                })}
-                  className="relative rounded-(--r-sm) overflow-hidden bg-s1 elev-1 pressable" style={{ paddingTop: "133%" }}>
-                  <Img src={c.cover} />
-                  {!!p && (
-                    <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-black/65 text-[9.5px] text-white/90 leading-none">
-                      第 {p.ep} 集{p.t > 3 ? ` · ${fmtTime(p.t)}` : ""}
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                {cards.map((c) => {
+                  const p = progressOf(c.id);
+                  const picked = selected.has(c.id);
+                  return (
+                  <button key={c.id}
+                    onClick={() => {
+                      if (selecting) { toggleSelected(c.id); return; }
+                      push({
+                        kind: "feed", videoIds: cards.map((x) => x.id), index: cards.findIndex((x) => x.id === c.id),
+                        title: tab === "fav" ? "我的收藏" : "观看历史",
+                        startEp: p?.ep, startTime: p?.t,
+                      });
+                    }}
+                    onContextMenu={(e) => { e.preventDefault(); setSelecting(true); toggleSelected(c.id); }}
+                    aria-pressed={selecting ? picked : undefined}
+                    className={`relative rounded-(--r-sm) overflow-hidden bg-s1 elev-1 pressable ${selecting && picked ? "ring-2 ring-(--p-primary)" : ""}`}
+                    style={{ paddingTop: "133%" }}>
+                    <Img src={c.cover} />
+                    {selecting && (
+                      <span className={`absolute inset-0 flex items-center justify-center ${picked ? "bg-black/45" : ""}`}>
+                        {picked && <ICheck size={26} className="text-white drop-shadow" />}
+                      </span>
+                    )}
+                    {!!p && (
+                      <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-black/65 text-[9.5px] text-white/90 leading-none">
+                        第 {p.ep} 集{p.t > 3 ? ` · ${fmtTime(p.t)}` : ""}
+                      </div>
+                    )}
+                    {tab === "fav" && !!p && p.ep > 1 && (
+                      <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full bg-black/65 text-[9.5px] text-white/90 leading-none">
+                        续播
+                      </div>
+                    )}
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-1.5">
+                      <div className="text-[10.5px] text-white clamp-2 leading-tight">{c.title}</div>
                     </div>
-                  )}
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-1.5">
-                    <div className="text-[10.5px] text-white clamp-2 leading-tight">{c.title}</div>
-                  </div>
+                  </button>
+                  );
+                })}
+              </div>
+
+              {/* 批量管理操作栏：未进入时给个入口，进入后全选/删除/退出 */}
+              {!selecting ? (
+                <button onClick={() => setSelecting(true)}
+                  className="mt-3 w-full h-9 rounded-(--r-ctl) bg-s3 text-[12px] text-mut pressable">
+                  批量管理{tab === "history" ? "观看历史" : "收藏"}
                 </button>
-                );
-              })}
-            </div>
+              ) : (
+                <div className="mt-3 flex gap-2">
+                  <button onClick={() => setSelected(new Set(cards.map((c) => c.id)))}
+                    className="flex-1 h-9 rounded-(--r-ctl) bg-s3 text-[12px] text-on/85 pressable">
+                    全选（{cards.length}）
+                  </button>
+                  <button onClick={batchRemove} disabled={!selected.size}
+                    className="flex-1 h-9 rounded-(--r-ctl) bg-danger text-on-danger text-[12px] font-semibold pressable disabled:opacity-50">
+                    删除{selected.size ? `（${selected.size}）` : ""}
+                  </button>
+                  <button onClick={() => { setSelecting(false); setSelected(new Set()); }}
+                    className="flex-1 h-9 rounded-(--r-ctl) bg-s3 text-[12px] text-mut pressable">
+                    取消
+                  </button>
+                </div>
+              )}
+            </>
           ) : (
             <Empty icon={tab === "fav" ? <IStar size={24} /> : <IClock size={24} />}
               title={tab === "fav" ? "还没有收藏" : "还没有观看记录"}
-              sub={tab === "fav" ? "在剧集页点收藏，之后就能在这里找到" : "看过的剧集会出现在这里"}
+              sub={tab === "fav" ? "在剧集页点收藏，之后就能在这里找到" : "看过的剧集会在这里出现"}
               action="去逛逛" onAction={() => push({ kind: "ranks" })} />
-          )}
-          {cards.length > 0 && tab === "history" && (
-            <button onClick={clearHistory} className="mt-3 w-full h-9 rounded-(--r-ctl) bg-s3 text-[12px] text-mut pressable">清空观看历史</button>
           )}
         </div>
 

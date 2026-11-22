@@ -143,6 +143,8 @@ type Store = {
   /** 记一条观看记录；`ep/t/dur` 省略时保留原进度，`ep` 变了就把进度归零 */
   addHistory: (id: number, ep?: number, t?: number, dur?: number) => void;
   clearHistory: () => void;
+  removeFavs: (ids: number[]) => void;
+  removeHistory: (ids: number[]) => void;
   toggleFollowLocal: (uid: number) => boolean;
   theater: boolean; setTheater: (v: boolean | ((p: boolean) => boolean)) => void;
   fs: boolean; setFs: (v: boolean | ((p: boolean) => boolean)) => void;
@@ -279,6 +281,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
   const clearHistory = useCallback(() => setP((s) => ({ ...s, history: [] })), []);
+  /** 批量移除收藏 / 观看记录（「我的」页多选管理） */
+  const removeFavs = useCallback((ids: number[]) => {
+    const drop = new Set(ids);
+    setP((s) => ({ ...s, favs: s.favs.filter((x) => !drop.has(x)) }));
+  }, []);
+  const removeHistory = useCallback((ids: number[]) => {
+    const drop = new Set(ids);
+    setP((s) => ({ ...s, history: s.history.filter((x) => !drop.has(x.id)) }));
+  }, []);
   const addSearch = useCallback((q: string) => {
     const t = q.trim();
     if (!t) return;
@@ -338,7 +349,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     user, setUser, loginOpen, setLoginOpen, logout,
     likes: p.likes, favs: p.favs, history: p.history, follows: p.follows,
     isLiked, isFav,
-    toggleLikeLocal, toggleFavLocal, toggleFollowLocal, addHistory, clearHistory,
+    toggleLikeLocal, toggleFavLocal, toggleFollowLocal, addHistory, clearHistory, removeFavs, removeHistory,
     muted: p.muted, setMuted, volume: p.volume, setVolume,
     rate: p.rate, setRatePref,
     theater, setTheater, fs, setFs, clean, setClean,
@@ -348,7 +359,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     toasts, toast,
   }), [theme, tab, setTab, stack, push, pop, user, loginOpen, logout,
     p.likes, p.favs, p.history, p.follows, p.muted, p.muteOnStartup, p.volume, p.rate, p.searchHist,
-    isLiked, isFav, toggleLikeLocal, toggleFavLocal, toggleFollowLocal, addHistory, clearHistory,
+    isLiked, isFav, toggleLikeLocal, toggleFavLocal, toggleFollowLocal, addHistory, clearHistory, removeFavs, removeHistory,
     setMuted, setMuteOnStartup, setVolume, setRatePref, addSearch, clearSearchHist, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity,
     toasts, toast, theater, setTheater, fs, setFs, clean, setClean]);
 

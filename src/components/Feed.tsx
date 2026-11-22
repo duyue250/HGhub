@@ -869,12 +869,16 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                     />
                   </div>
 
-                  {/* 横拖定位浮层 */}
+                  {/* 横拖定位浮层：贴画面底部预览，不遮挡中央内容（HGhubX #152 同款改进） */}
                   {!isDesktop && scrub && (
-                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none" style={{ background: "rgba(0,0,0,.25)" }}>
-                      <span className="text-[26px] font-bold hg-ink tabular-nums hg-ov-shadow">{fmtTime(scrub.target)}</span>
-                      <span className="text-[11px] hg-ink-4 mt-1 tabular-nums">/ {fmtTime(duration)}</span>
-                      <div className="mt-4 w-[62%] h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,.25)" }}>
+                    <div className="absolute inset-x-0 z-30 flex flex-col items-center pointer-events-none"
+                      style={{ bottom: rotated || vpLandscape ? 40 : "calc(var(--sab, 0px) + 56px)" }}>
+                      <div className="px-4 py-2 rounded-xl backdrop-blur-md elev-2 flex flex-col items-center"
+                        style={{ background: "rgba(0,0,0,.6)" }}>
+                        <span className="text-[16px] font-bold text-white tabular-nums">{fmtTime(scrub.target)}</span>
+                        <span className="text-[10px] text-white/70 mt-0.5 tabular-nums">/ {fmtTime(duration)}</span>
+                      </div>
+                      <div className="mt-2 w-[62%] h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,.25)" }}>
                         <div className="h-full bg-white" style={{ width: `${scrub.pct}%` }} />
                       </div>
                     </div>
